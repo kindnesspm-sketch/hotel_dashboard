@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飯店房價競爭監測戰情室 - 修正版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+TC:wght@300;500;700&display=swap');
+        
+        body {
+            background-color: #020617;
+            color: #f1f5f9;
+            font-family: 'Noto Sans TC', sans-serif;
+            overflow-x: hidden;
+            height: 100vh;
+        }
+
+        .war-room-header {
+            font-family: 'Orbitron', sans-serif;
+            background: linear-gradient(90deg, #0f172a 0%, #020617 100%);
+            border-bottom: 1px solid #1e40af;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 12px;
+        }
+
+        .checkbox-container:hover {
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        input[type="checkbox"] {
+            appearance: none;
+            background-color: transparent;
+            margin: 0;
+            color: #3b82f6;
+            width: 1.15em;
+            height: 1.15em;
+            border: 0.15em solid #3b82f6;
+            border-radius: 0.15em;
+            display: grid;
+            place-content: center;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"]::before {
+            content: "";
+            width: 0.65em;
+            height: 0.65em;
+            transform: scale(0);
+            transition: 120ms transform ease-in-out;
+            box-shadow: inset 1em 1em #60a5fa;
+            clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        }
+
+        input[type="checkbox"]:checked::before {
+            transform: scale(1);
+        }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #020617; }
+        ::-webkit-scrollbar-thumb { background: #1e40af; border-radius: 10px; }
+    </style>
+</head>
+<body class="flex flex-col">
+
+    <header class="war-room-header py-3 px-6 flex justify-between items-center z-50">
+        <div class="flex items-center gap-4">
+            <div class="p-2 bg-blue-600 rounded-lg shadow-[0_0_10px_rgba(37,99,235,0.5)]">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-widest text-blue-400 leading-none uppercase">Intelligence Dashboard</h1>
+                <p class="text-[10px] text-slate-500 uppercase tracking-[0.2em] mt-1">Pricing Trend & Competitor Monitor</p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-6">
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+            <button onclick="document.getElementById('csvFileInput').click()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center shadow-[0_0_15px_rgba(37,99,235,0.3)]">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                上傳數據 (CSV)
+            </button>
+        </div>
+    </header>
+
+    <main class="flex flex-1 h-[calc(100vh-64px)] p-4 gap-4 overflow-hidden">
+        
+        <!-- 左側選擇器 -->
+        <aside class="w-80 flex flex-col gap-4">
+            <div class="glass-panel flex-1 flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-slate-800 space-y-3">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest">市場篩選控制</h2>
+                        <span id="selectedCount" class="text-[10px] bg-blue-600 px-2 py-0.5 rounded text-white font-mono">0</span>
+                    </div>
+                    
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase mb-1 block">行政區域</label>
+                        <select id="districtFilter" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 text-xs outline-none focus:border-blue-500 text-slate-300">
+                            <option value="all">顯示所有區域</option>
+                            <option value="中西區">中西區</option>
+                            <option value="安平區">安平區</option>
+                            <option value="東區">東區</option>
+                            <option value="北區">北區</option>
+                            <option value="安南區">安南區</option>
+                            <option value="其他區域">其他區域</option>
+                        </select>
+                    </div>
+
+                    <input type="text" id="hotelSearch" placeholder="搜尋飯店名稱..." class="w-full bg-slate-900/50 border border-slate-700 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+                </div>
+                
+                <div id="hotelList" class="flex-1 overflow-y-auto p-2 space-y-0.5">
+                    <div class="text-center py-20 text-slate-600 text-xs italic">請載入房價趨勢檔案</div>
+                </div>
+
+                <div class="p-3 bg-slate-900/80 border-t border-slate-800 flex gap-2">
+                    <button onclick="selectAll(true)" class="flex-1 text-[10px] py-2 bg-slate-800 hover:bg-slate-700 rounded transition-colors text-blue-400 font-bold">全選區域</button>
+                    <button onclick="selectAll(false)" class="flex-1 text-[10px] py-2 bg-slate-800 hover:bg-slate-700 rounded transition-colors text-slate-400">清空選取</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右側戰情板 -->
+        <section class="flex-1 flex flex-col gap-4">
+            
+            <div class="grid grid-cols-3 gap-4 h-24">
+                <div class="glass-panel p-4 flex flex-col justify-center border-l-4 border-blue-500">
+                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">監測對手數</span>
+                    <p id="statCount" class="text-3xl font-bold font-mono text-blue-100">--</p>
+                </div>
+                <div class="glass-panel p-4 flex flex-col justify-center border-l-4 border-emerald-500">
+                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">選取飯店平均價</span>
+                    <p id="statAvg" class="text-3xl font-bold font-mono text-emerald-400">--</p>
+                </div>
+                <div class="glass-panel p-4 flex flex-col justify-center border-l-4 border-amber-500">
+                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">價格波動幅度</span>
+                    <p id="statVolatility" class="text-3xl font-bold font-mono text-amber-400">--</p>
+                </div>
+            </div>
+
+            <div class="glass-panel flex-1 p-6 flex flex-col relative overflow-hidden">
+                <div class="absolute inset-0 opacity-[0.03] pointer-events-none" style="background-image: radial-gradient(#3b82f6 1px, transparent 1px); background-size: 20px 20px;"></div>
+                <div class="flex justify-between items-center mb-6 z-10">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center">
+                            <span class="w-1.5 h-5 bg-blue-600 mr-3 rounded-full"></span>
+                            房價每日變化趨勢圖 (Daily Extension)
+                        </h3>
+                        <p id="dateRangeDisplay" class="text-[10px] text-slate-500 font-mono mt-1"></p>
+                    </div>
+                </div>
+                <div class="flex-1 relative min-h-0">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const DISTRICT_MAP = {
+            "安平區": ["安平", "雅樂軒", "嬉安平", "六合居", "苒得出門", "灰熊"],
+            "中西區": ["聖禾", "文悅", "達煦", "二弄八號", "星象", "旅幸福", "劍橋", "聖旺", "富信", "郡象", "耀西", "赤崁", "友愛", "享兜兜", "舒室", "拾光如初"],
+            "東區": ["林森", "光華", "長榮"],
+            "北區": ["三木森", "公園", "陳倉客棧", "瑞斯特"],
+            "安南區": ["仙湖", "有吉屋"],
+            "永康區": ["永康"]
+        };
+
+        let processedData = {};
+        let hotelToDistrict = {};
+        let allDates = [];
+        let chart = null;
+        let selectedHotels = new Set();
+        const colors = [
+            '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
+            '#ec4899', '#06b6d4', '#f97316', '#a855f7', '#14b8a6',
+            '#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa'
+        ];
+
+        function initChart() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if(chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { 
+                            position: 'bottom', 
+                            labels: { color: '#94a3b8', font: { size: 10 }, usePointStyle: true, padding: 15 } 
+                        },
+                        tooltip: { 
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)', 
+                            padding: 12,
+                            borderColor: 'rgba(59, 130, 246, 0.3)',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        y: { 
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                            ticks: { 
+                                color: '#64748b', 
+                                font: { family: 'Orbitron', size: 10 },
+                                callback: v => '$' + v.toLocaleString()
+                            } 
+                        },
+                        x: { 
+                            grid: { display: false }, 
+                            ticks: { color: '#64748b', font: { size: 10 } } 
+                        }
+                    }
+                }
+            });
+        }
+
+        function parsePrice(val) {
+            if (typeof val !== 'string') return parseFloat(val);
+            return parseFloat(val.replace(/,/g, ''));
+        }
+
+        function detectDistrict(name) {
+            for (let d in DISTRICT_MAP) {
+                if (DISTRICT_MAP[d].some(k => name.includes(k))) return d;
+            }
+            return "其他區域";
+        }
+
+        document.getElementById('csvFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processCSVData(results.data);
+                }
+            });
+        });
+
+        function processCSVData(data) {
+            processedData = {};
+            hotelToDistrict = {};
+            const dateSet = new Set();
+            const hotelSet = new Set();
+
+            data.forEach(row => {
+                const date = row['日期'];
+                const hotel = row['飯店名稱'];
+                const price = parsePrice(row['房價']);
+
+                if (date && hotel && !isNaN(price)) {
+                    dateSet.add(date);
+                    hotelSet.add(hotel);
+                    if (!processedData[hotel]) {
+                        processedData[hotel] = {};
+                        hotelToDistrict[hotel] = detectDistrict(hotel);
+                    }
+                    processedData[hotel][date] = price;
+                }
+            });
+
+            allDates = Array.from(dateSet).sort((a, b) => new Date(a) - new Date(b));
+            
+            // 載入新檔案後確保清空
+            selectedHotels.clear();
+            
+            renderHotelList();
+            document.getElementById('dateRangeDisplay').innerText = `監測區間: ${allDates[0]} 至 ${allDates[allDates.length-1]}`;
+            updateDashboard(); 
+        }
+
+        function renderHotelList() {
+            const list = document.getElementById('hotelList');
+            const district = document.getElementById('districtFilter').value;
+            const search = document.getElementById('hotelSearch').value.toLowerCase();
+            const hotels = Object.keys(processedData).sort();
+            
+            list.innerHTML = '';
+            hotels.forEach(hotel => {
+                const hotelDistrict = hotelToDistrict[hotel];
+                const matchesDistrict = (district === 'all' || hotelDistrict === district);
+                const matchesSearch = hotel.toLowerCase().includes(search);
+
+                if (matchesDistrict && matchesSearch) {
+                    const isChecked = selectedHotels.has(hotel);
+                    const item = document.createElement('label');
+                    item.className = `checkbox-container flex items-center p-2 rounded-lg cursor-pointer transition-all mb-1 ${isChecked ? 'bg-blue-900/30' : ''}`;
+                    item.innerHTML = `
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} class="mr-3">
+                        <div class="flex flex-col min-w-0">
+                            <span class="text-[11px] ${isChecked ? 'text-blue-200 font-bold' : 'text-slate-400'} truncate">${hotel}</span>
+                            <span class="text-[9px] text-slate-600">${hotelDistrict}</span>
+                        </div>
+                    `;
+                    
+                    const cb = item.querySelector('input');
+                    cb.onchange = () => {
+                        if (cb.checked) selectedHotels.add(hotel);
+                        else selectedHotels.delete(hotel);
+                        updateDashboard();
+                        item.classList.toggle('bg-blue-900/30', cb.checked);
+                        const span = item.querySelector('span');
+                        span.classList.toggle('text-blue-200', cb.checked);
+                        span.classList.toggle('font-bold', cb.checked);
+                    };
+                    list.appendChild(item);
+                }
+            });
+        }
+
+        /**
+         * 修正後的全選/清空函數
+         */
+        function selectAll(bool) {
+            const district = document.getElementById('districtFilter').value;
+            
+            if (!bool) {
+                // 如果是「清空選取」，不分行政區直接清空所有全域選取
+                selectedHotels.clear();
+            } else {
+                // 如果是「全選」，則根據當前行政區過濾器來選取
+                Object.keys(processedData).forEach(hotel => {
+                    const matchesDistrict = (district === 'all' || hotelToDistrict[hotel] === district);
+                    if (matchesDistrict) {
+                        selectedHotels.add(hotel);
+                    }
+                });
+            }
+            
+            renderHotelList(); // 更新 UI 狀態
+            updateDashboard(); // 強制重繪圖表（此時 data 會是空的）
+        }
+
+        function updateDashboard() {
+            if (!chart) return;
+            const datasets = [];
+            let sum = 0, count = 0, prices = [];
+
+            document.getElementById('selectedCount').innerText = selectedHotels.size;
+            document.getElementById('statCount').innerText = selectedHotels.size;
+
+            // 只有當有選取飯店時才處理數據
+            if (selectedHotels.size > 0) {
+                Array.from(selectedHotels).forEach((hotel, idx) => {
+                    const dataArray = allDates.map(d => processedData[hotel][d] || null);
+                    dataArray.forEach(p => { if(p !== null) { sum += p; count++; prices.push(p); }});
+
+                    datasets.push({
+                        label: hotel,
+                        data: dataArray,
+                        borderColor: colors[idx % colors.length],
+                        backgroundColor: colors[idx % colors.length] + '22',
+                        borderWidth: 2,
+                        tension: 0.35,
+                        pointRadius: selectedHotels.size > 8 ? 0 : 3,
+                        pointHoverRadius: 6,
+                        spanGaps: true
+                    });
+                });
+            }
+
+            // 更新圖表數據（若為空則會清空所有線條）
+            chart.data.labels = allDates;
+            chart.data.datasets = datasets;
+            chart.update(); // 移除 'none' 以確保 UI 的即時反應感
+
+            // 更新戰情板數據
+            if (selectedHotels.size === 0) {
+                document.getElementById('statAvg').innerText = '--';
+                document.getElementById('statVolatility').innerText = '--';
+            } else {
+                document.getElementById('statAvg').innerText = count > 0 ? 'NT$' + Math.round(sum/count).toLocaleString() : '--';
+                if (prices.length > 0) {
+                    const max = Math.max(...prices);
+                    const min = Math.min(...prices);
+                    const vol = (((max - min) / min) * 100).toFixed(1);
+                    document.getElementById('statVolatility').innerText = vol + '%';
+                }
+            }
+        }
+
+        document.getElementById('districtFilter').addEventListener('change', renderHotelList);
+        document.getElementById('hotelSearch').addEventListener('input', renderHotelList);
+        window.onload = initChart;
+    </script>
+</body>
+</html>
